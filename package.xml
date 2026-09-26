@@ -1,0 +1,14 @@
+<?xml version="1.0"?>
+<package format="2">
+  <name>leptrino_force_torque_ros_driver</name>
+  <version>0.1.0</version>
+  <description>
+    Reads measurements from Leptrino six-axis force-torque sensors
+    and publishes them as WrenchStamped messages.
+  </description>
+  <maintainer email="225143362+katayama-ki@users.noreply.github.com">katayama-ki</maintainer>
+  <license>MIT</license>
+  <buildtool_depend>catkin</buildtool_depend>
+  <depend>roscpp</depend>
+  <depend>geometry_msgs</depend>
+</package>
