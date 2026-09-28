@@ -3,20 +3,12 @@
   <arg name="frame_id" default="leptrino" />
   <arg name="pub_rate" default="0.0" />
   <arg name="pub_queue_size" default="1" />
-  <arg name="command_timeout" default="1.0" />
-  <arg name="command_retries" default="2" />
   <arg name="zero_wrench_on_start" default="false" />
-  <arg name="zero_wrench_samples" default="100" />
-  <arg name="zero_wrench_timeout" default="0.5" />
   <node pkg="leptrino_force_torque_ros_driver" type="leptrino_force_torque_ros_driver" name="leptrino" output="screen">
     <param name="serial_port" type="str" value="$(arg serial_port)" />
     <param name="frame_id" type="str" value="$(arg frame_id)" />
     <param name="pub_rate" type="double" value="$(arg pub_rate)" />
     <param name="pub_queue_size" type="int" value="$(arg pub_queue_size)" />
-    <param name="command_timeout" type="double" value="$(arg command_timeout)" />
-    <param name="command_retries" type="int" value="$(arg command_retries)" />
     <param name="zero_wrench_on_start" type="bool" value="$(arg zero_wrench_on_start)" />
-    <param name="zero_wrench_samples" type="int" value="$(arg zero_wrench_samples)" />
-    <param name="zero_wrench_timeout" type="double" value="$(arg zero_wrench_timeout)" />
   </node>
 </launch>

@@ -148,5 +148,6 @@ int main()
   StatusThrottle throttle;
   assert(throttle.warnings(1, Deadline{}) == 1 && throttle.warnings(1, Deadline{}) == 0);
   assert(throttle.warnings(2, Deadline{}) == 2);
-  assert(throttle.warnings(3, Deadline{} + std::chrono::seconds(1)) == 3);
+  assert(throttle.warnings(3, Deadline{} + std::chrono::milliseconds(4999)) == 0);
+  assert(throttle.warnings(3, Deadline{} + std::chrono::seconds(5)) == 3);
 }

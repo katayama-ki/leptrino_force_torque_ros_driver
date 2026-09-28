@@ -93,17 +93,20 @@ private:
   bool pending_ = false;
 };
 
+/// Shared interval for repeated sensor-status and missing-measurement notifications.
+constexpr std::chrono::seconds notification_interval{5};
+
 /// Independent per-bit throttling remains live even when ROS time is paused.
 class StatusThrottle
 {
 public:
-  /// Return error bits due for a warning, at most once per second for each bit.
+  /// Return error bits due for a warning, at most once every five seconds for each bit.
   uint8_t warnings(uint8_t status, Deadline received)
   {
     uint8_t result = 0;
     for (std::size_t bit = 0; bit < last_.size(); ++bit) {
       const uint8_t mask = 1u << bit;
-      if ((status & mask) && (!(seen_ & mask) || received - last_[bit] >= std::chrono::seconds(1)))
+      if ((status & mask) && (!(seen_ & mask) || received - last_[bit] >= notification_interval))
       {
         result |= mask;
         seen_ |= mask;

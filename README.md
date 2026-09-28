@@ -22,20 +22,31 @@ ls -l /dev/serial/by-id/
 Replace `<device-id>` with the corresponding entry name and launch the node:
 
 ```sh
-roslaunch leptrino_force_torque_ros_driver leptrino.launch serial_port:="/dev/serial/by-id/<device-id>" pub_rate:=500
+roslaunch leptrino_force_torque_ros_driver leptrino.launch serial_port:="/dev/serial/by-id/<device-id>"
 ```
 
-| Parameter / argument | Default | Description |
+The standard launch file exposes the commonly used private parameters below as launch arguments.
+
+| Private parameter | Default | Description |
 |---|---|---|
 | `serial_port` | Required | Serial device path, such as `/dev/serial/by-id/<device-id>`. |
 | `frame_id` | `leptrino` | Frame ID assigned to each `WrenchStamped` message. |
 | `pub_rate` | `0.0` | Target average publication rate in Hz. `0` publishes the latest valid measurement from each receive chunk. |
 | `pub_queue_size` | `1` | ROS publisher queue size. |
+| `zero_wrench_on_start` | `false` | If true, zero the sensor on node startup and start publishing only after success. If startup zeroing fails, the node exits. |
+
+#### Advanced parameters
+
+The following parameters normally do not need adjustment.
+To override them, set private parameters in your own launch file.
+
+| Private parameter | Default | Description |
+|---|---|---|
+| `warning_timeout` | `1.0` | Time in seconds without a valid measurement frame before warning. |
 | `command_timeout` | `1.0` | Timeout in seconds for each command attempt, including transmission and response validation. |
 | `command_retries` | `2` | Number of retries after the initial command attempt. |
-| `zero_wrench_on_start` | `false` | If true, zero the sensor on node startup and start publishing only after success. If startup zeroing fails, the node exits. |
-| `zero_wrench_samples` | `100` | Positive number of measurements to average for each zeroing request. |
-| `zero_wrench_timeout` | `0.5` | Positive finite timeout in seconds for collecting all samples. |
+| `zero_wrench_samples` | `100` | Number of measurements to average for each zeroing request. |
+| `zero_wrench_timeout` | `0.5` | Timeout in seconds for collecting all samples. |
 
 ### Zeroing
 
@@ -47,7 +58,7 @@ rosservice call /leptrino/zero_wrench
 
 A failed `zero_wrench` service call leaves the node running with the previous offset.
 
-## Design
+## Design and implementation
 
 ### Processing flow
 
@@ -88,6 +99,25 @@ The same loop handles reception and publication, without a publication timer.
 A short mutex-protected section shares zeroing state with service callbacks; sample waiting
 happens only on a callback thread, using a condition variable.
 The achieved rate depends on chunk arrivals; selection does not perform averaging or anti-alias filtering.
+
+### Sensor status and missing measurements
+
+Repeated sensor-status and missing-measurement notifications are throttled to
+once every five seconds per condition. The first missing-measurement warning
+is issued after `warning_timeout`.
+
+Overload (status bit 2) measurements remain publishable with a throttled WARN.
+Values are not additionally clipped: the sensor saturates at raw counts of
+±15000 for protocol v1.31 and ±32000 for v1.13, with rated load at ±10000.
+
+Correction-data errors (bit 0) and sensor errors (bit 1) produce throttled ERROR
+logs and suppress publication of the selected measurement. Reception continues,
+and publication resumes when a healthy or overload-only measurement is selected.
+
+After START is confirmed, `warning_timeout` monitors time since the last
+protocol-valid measurement frame, independently of publication rate or zeroing.
+Silence or only malformed frames produce a WARN after the threshold.
+This warning neither stops nor restarts the sensor.
 
 ### Zeroing
 
