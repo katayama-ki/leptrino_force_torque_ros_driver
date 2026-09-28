@@ -150,5 +150,6 @@ int main()
   lw::StatusThrottle throttle;
   assert(throttle.warnings(1, lw::Deadline{}) == 1 && throttle.warnings(1, lw::Deadline{}) == 0);
   assert(throttle.warnings(2, lw::Deadline{}) == 2);
-  assert(throttle.warnings(3, lw::Deadline{} + std::chrono::seconds(1)) == 3);
+  assert(throttle.warnings(3, lw::Deadline{} + std::chrono::milliseconds(4999)) == 0);
+  assert(throttle.warnings(3, lw::Deadline{} + std::chrono::seconds(5)) == 3);
 }
