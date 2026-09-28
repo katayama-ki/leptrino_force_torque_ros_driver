@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.0.2)
 project(leptrino_force_torque_ros_driver)
 
-find_package(catkin REQUIRED COMPONENTS geometry_msgs roscpp)
+find_package(catkin REQUIRED COMPONENTS geometry_msgs roscpp std_srvs)
 
 catkin_package()
 
@@ -19,7 +19,7 @@ install(FILES README.md LICENSE DESTINATION ${CATKIN_PACKAGE_SHARE_DESTINATION})
 
 if(CATKIN_ENABLE_TESTING)
   find_package(Threads REQUIRED)
-  foreach(test core sensor publication)
+  foreach(test core sensor publication zero_wrench)
     add_executable(${PROJECT_NAME}_${test}_test test/${test}_test.cpp)
     target_compile_options(${PROJECT_NAME}_${test}_test PRIVATE -UNDEBUG)
     target_link_libraries(${PROJECT_NAME}_${test}_test leptrino_sensor Threads::Threads util)

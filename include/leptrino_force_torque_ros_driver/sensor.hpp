@@ -37,7 +37,10 @@ public:
   void initialize();
   /// Confirm START and process reads until runtime cancellation; command/I/O failures throw.
   /// Requires successful initialize(); chunk_done also follows reads containing START responses.
-  void run(const Measurement & measurement, const ChunkDone & chunk_done);
+  /// started runs immediately after START is confirmed, before dispatching measurements.
+  void run(
+    const Measurement & measurement, const ChunkDone & chunk_done,
+    const std::function<void()> & started = {});
   /// Confirm STOP after any START attempt, without retries; failure throws.
   void stop();
 
@@ -96,6 +99,7 @@ private:
 
   Measurement measurement_;
   ChunkDone chunk_done_;
+  std::function<void()> started_;
 };
 }  // namespace leptrino_force_torque_ros_driver
 

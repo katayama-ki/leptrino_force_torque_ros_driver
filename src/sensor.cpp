@@ -164,6 +164,9 @@ void Sensor::command(uint8_t code, int retries)
               state = Clock::now() < deadline ? State::success : State::waiting;
               if (state == State::success && code == command_code::start) {
                 streaming_ = true;
+                if (started_) {
+                  started_();
+                }
               }
             } else {
               state = State::retry;
@@ -232,7 +235,9 @@ void Sensor::initialize()
   initialized_ = true;
 }
 
-void Sensor::run(const Measurement & measurement, const ChunkDone & chunk_done)
+void Sensor::run(
+  const Measurement & measurement, const ChunkDone & chunk_done,
+  const std::function<void()> & started)
 {
   if (!initialized_) {
     throw std::logic_error("sensor is not initialized");
@@ -240,6 +245,7 @@ void Sensor::run(const Measurement & measurement, const ChunkDone & chunk_done)
 
   measurement_ = measurement;
   chunk_done_ = chunk_done;
+  started_ = started;
   command(command_code::start, retries_);
 
   const Frame frame = [&](
@@ -261,6 +267,7 @@ void Sensor::stop()
   streaming_ = false;
   measurement_ = {};
   chunk_done_ = {};
+  started_ = {};
 
   if (!start_sent_) {
     return;

@@ -1,14 +1,51 @@
 // SPDX-License-Identifier: MIT
 #include <geometry_msgs/WrenchStamped.h>
 #include <ros/ros.h>
+#include <std_srvs/Trigger.h>
 
 #include <limits>
+#include <stdexcept>
 #include <string>
 
 #include "leptrino_force_torque_ros_driver/publication.hpp"
 #include "leptrino_force_torque_ros_driver/sensor.hpp"
+#include "leptrino_force_torque_ros_driver/zero_wrench.hpp"
 
 namespace lw = leptrino_force_torque_ros_driver;
+
+namespace
+{
+/// Keep ROS callbacks off the hardware loop and cancel waits before joining callback threads.
+class ZeroWrenchService
+{
+public:
+  ZeroWrenchService(ros::NodeHandle & nh, lw::ZeroWrench & zero) : zero_(zero), spinner_(1)
+  {
+    service_ = nh.advertiseService("zero_wrench", &ZeroWrenchService::callback, this);
+    spinner_.start();
+  }
+
+  ~ZeroWrenchService()
+  {
+    zero_.stop();
+    spinner_.stop();
+  }
+
+private:
+  bool callback(std_srvs::Trigger::Request &, std_srvs::Trigger::Response & response)
+  {
+    const auto request = zero_.start();
+    const auto result = zero_.wait(request);
+    response.success = result.success;
+    response.message = result.message;
+    return true;
+  }
+
+  lw::ZeroWrench & zero_;
+  ros::ServiceServer service_;
+  ros::AsyncSpinner spinner_;
+};
+}  // namespace
 
 /// Publish each selected chunk's latest measurement and report startup/runtime/shutdown failures.
 int main(int argc, char ** argv)
@@ -27,6 +64,9 @@ int main(int argc, char ** argv)
   const int retries = nh.param("command_retries", 2);
   const double pub_rate = nh.param("pub_rate", 0.0);
   const double timeout = nh.param("command_timeout", 1.0);
+  const bool zero_on_start = nh.param("zero_wrench_on_start", false);
+  const int zero_samples = nh.param("zero_wrench_samples", 100);
+  const double zero_timeout = nh.param("zero_wrench_timeout", 0.5);
 
   if (
     frame_id.empty() || queue_size <= 0 || retries < 0 ||
@@ -37,10 +77,35 @@ int main(int argc, char ** argv)
     return 1;
   }
 
+  if (zero_samples <= 0 || !lw::validTimeout(zero_timeout)) {
+    ROS_FATAL("Invalid zero_wrench_samples or zero_wrench_timeout: both must be positive and finite");
+    return 1;
+  }
+
+  lw::ZeroWrench zero(zero_samples, zero_timeout);
+  lw::ZeroWrench::Pending startup_zero;
+  bool publication_enabled = false;
+  const auto check_startup = [&] {
+    if (startup_zero) {
+      lw::ZeroWrench::Result result;
+      if (zero.poll(startup_zero, result)) {
+        if (!result.success) {
+          throw std::runtime_error("Startup zero_wrench failed: " + result.message);
+        }
+        startup_zero.reset();
+        publication_enabled = true;
+        ROS_INFO("Startup zero_wrench succeeded");
+      }
+    }
+  };
+
   lw::ChunkPublication publication(pub_rate);
   lw::StatusThrottle status;
   lw::Runtime runtime{
-    [] { return ros::ok(); },
+    [&] {
+      check_startup();
+      return ros::ok();
+    },
     [] { return ros::Time::now().toNSec(); },
     [](const std::string & message) { ROS_WARN("%s", message.c_str()); },
   };
@@ -75,6 +140,7 @@ int main(int argc, char ** argv)
       }
 
       auto publisher = nh.advertise<geometry_msgs::WrenchStamped>("wrench", queue_size);
+      std::unique_ptr<ZeroWrenchService> zero_service;
       bool publication_started = false;
       sensor.run(
         [&](const uint8_t * data, const lw::ReceiveStamp & stamp) {
@@ -89,15 +155,21 @@ int main(int argc, char ** argv)
             ROS_WARN("Sensor status: rated range exceeded (bit 2)");
           }
 
+          zero.sample(data, factors, stamp.steady);
           publication.update(data);
         },
         [&](const lw::ReceiveStamp & stamp) {
           const uint8_t * data = publication.finishChunk(stamp.steady);
-          if (!data) {
+          check_startup();
+          if (publication_enabled && !zero_service) {
+            zero_service.reset(new ZeroWrenchService(nh, zero));
+          }
+          if (!data || !publication_enabled) {
             return;
           }
 
-          const auto values = lw::decodeWrench(data, factors);
+          auto values = lw::decodeWrench(data, factors);
+          zero.subtract(values);
           geometry_msgs::WrenchStamped message;
           message.header.stamp.fromNSec(stamp.ros_nanoseconds);
           message.header.frame_id = frame_id;
@@ -123,6 +195,13 @@ int main(int argc, char ** argv)
                 "Publishing started on %s: latest per receive chunk (sensor rate unavailable)",
                 publisher.getTopic().c_str());
             }
+          }
+        },
+        [&] {
+          if (zero_on_start) {
+            startup_zero = zero.start();
+          } else {
+            publication_enabled = true;
           }
         });
     } catch (const std::exception & error) {
