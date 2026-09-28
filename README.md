@@ -9,7 +9,9 @@ node name, `leptrino`.
 Tested with a PFS055YA251U6 sensor using communication protocol v1.31.
 Protocol v1.13 is also supported, but changing the digital filter setting is not implemented.
 
-## Launch
+## Usage
+
+### Launch
 
 List the available serial devices to find your sensor's device ID:
 
@@ -31,6 +33,19 @@ roslaunch leptrino_force_torque_ros_driver leptrino.launch serial_port:="/dev/se
 | `pub_queue_size` | `1` | ROS publisher queue size. |
 | `command_timeout` | `1.0` | Timeout in seconds for each command attempt, including transmission and response validation. |
 | `command_retries` | `2` | Number of retries after the initial command attempt. |
+| `zero_wrench_on_start` | `false` | If true, zero the sensor on node startup and start publishing only after success. If startup zeroing fails, the node exits. |
+| `zero_wrench_samples` | `100` | Positive number of measurements to average for each zeroing request. |
+| `zero_wrench_timeout` | `0.5` | Positive finite timeout in seconds for collecting all samples. |
+
+### Zeroing
+
+Call the private `~zero_wrench` service (`std_srvs/Trigger`):
+
+```sh
+rosservice call /leptrino/zero_wrench
+```
+
+A failed `zero_wrench` service call leaves the node running with the previous offset.
 
 ## Design
 
@@ -66,7 +81,26 @@ Earlier measurements in that chunk are discarded, while partial frames continue 
 `pub_rate:=0` publishes each chunk's latest measurement; positive values additionally select chunks
 at a target average rate using a monotonic schedule, without catch-up bursts after delays.
 Reception, validation, and status checks continue at full rate, including discarded measurements.
-Only selected measurements are converted and used to construct ROS messages, reducing downstream load.
+Only selected measurements are used to construct ROS messages, reducing downstream load.
+During zeroing, healthy measurements are also converted for the sample average.
 Chunks without a new valid measurement never republish a previous value.
-The same loop handles reception and publication, without a publication timer or shared-value mutex.
+The same loop handles reception and publication, without a publication timer.
+A short mutex-protected section shares zeroing state with service callbacks; sample waiting
+happens only on a callback thread, using a condition variable.
 The achieved rate depends on chunk arrivals; selection does not perform averaging or anti-alias filtering.
+
+### Zeroing
+
+Zeroing averages the next `zero_wrench_samples` valid measurements received after the request.
+Each axis is summed and divided by the sample count once; the resulting offset is subtracted from subsequent wrench values. 
+
+Service callbacks run sequentially on `ros::AsyncSpinner(1)`, separately from the hardware loop.
+Requests received during zeroing wait in the callback queue. Each callback starts a fresh collection
+and returns its own success or failure; queue waiting time is excluded from `zero_wrench_timeout`.
+
+With `zero_wrench_on_start=true`, collection and its timeout start immediately after the START
+response is confirmed, excluding initialization and START command wait time. No wrench is
+published until zeroing succeeds. A timeout, including silence or too few healthy measurements,
+logs a fatal error and exits the node. With startup zeroing enabled, the service is advertised only
+after zeroing succeeds. Otherwise it is advertised when parsing of the receive chunk containing
+the START response finishes, even if that chunk contains no measurements.
