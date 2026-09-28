@@ -3,6 +3,7 @@
 #include <ros/ros.h>
 #include <std_srvs/Trigger.h>
 
+#include <chrono>
 #include <limits>
 #include <stdexcept>
 #include <string>
@@ -64,6 +65,7 @@ int main(int argc, char ** argv)
   const int retries = nh.param("command_retries", 2);
   const double pub_rate = nh.param("pub_rate", 0.0);
   const double timeout = nh.param("command_timeout", 1.0);
+  const double warning_timeout = nh.param("warning_timeout", 1.0);
   const bool zero_on_start = nh.param("zero_wrench_on_start", false);
   const int zero_samples = nh.param("zero_wrench_samples", 100);
   const double zero_timeout = nh.param("zero_wrench_timeout", 0.5);
@@ -71,14 +73,10 @@ int main(int argc, char ** argv)
   if (
     frame_id.empty() || queue_size <= 0 || retries < 0 ||
     retries == std::numeric_limits<int>::max() || !lw::validTimeout(timeout) ||
-    !lw::validRate(pub_rate))
+    !lw::validRate(pub_rate) || !lw::validTimeout(warning_timeout) ||
+    zero_samples <= 0 || !lw::validTimeout(zero_timeout))
   {
-    ROS_FATAL("Invalid frame_id, pub_queue_size, command_retries, command_timeout or pub_rate");
-    return 1;
-  }
-
-  if (zero_samples <= 0 || !lw::validTimeout(zero_timeout)) {
-    ROS_FATAL("Invalid zero_wrench_samples or zero_wrench_timeout: both must be positive and finite");
+    ROS_FATAL("Invalid node parameters");
     return 1;
   }
 
@@ -101,10 +99,31 @@ int main(int argc, char ** argv)
 
   lw::ChunkPublication publication(pub_rate);
   lw::StatusThrottle status;
+  bool receiving = false;
+  bool timeout_warned = false;
+  lw::Deadline last_measurement{};
+  lw::Deadline last_timeout_warning{};
   lw::Runtime runtime{
     [&] {
       check_startup();
-      return ros::ok();
+      if (!ros::ok()) {
+        return false;
+      }
+      if (receiving) {
+        const auto now = lw::Clock::now();
+        const double elapsed = std::chrono::duration<double>(now - last_measurement).count();
+        if (
+          elapsed >= warning_timeout &&
+          (!timeout_warned || now - last_timeout_warning >= lw::notification_interval))
+        {
+          ROS_WARN(
+            "No valid measurement frame for %.3f s (warning_timeout %.3f s)",
+            elapsed, warning_timeout);
+          last_timeout_warning = now;
+          timeout_warned = true;
+        }
+      }
+      return true;
     },
     [] { return ros::Time::now().toNSec(); },
     [](const std::string & message) { ROS_WARN("%s", message.c_str()); },
@@ -144,12 +163,14 @@ int main(int argc, char ** argv)
       bool publication_started = false;
       sensor.run(
         [&](const uint8_t * data, const lw::ReceiveStamp & stamp) {
+          last_measurement = stamp.steady;
+          timeout_warned = false;
           const auto warnings = status.warnings(lw::statusBits(data), stamp.steady);
           if (warnings & lw::status_bit::correction_error) {
-            ROS_WARN("Sensor status: correction data error (bit 0)");
+            ROS_ERROR("Sensor status: correction data error (bit 0)");
           }
           if (warnings & lw::status_bit::sensor_error) {
-            ROS_WARN("Sensor status: sensor error (bit 1)");
+            ROS_ERROR("Sensor status: sensor error (bit 1)");
           }
           if (warnings & lw::status_bit::overload) {
             ROS_WARN("Sensor status: rated range exceeded (bit 2)");
@@ -165,6 +186,14 @@ int main(int argc, char ** argv)
             zero_service.reset(new ZeroWrenchService(nh, zero));
           }
           if (!data || !publication_enabled) {
+            return;
+          }
+
+          // Check the selected frame so an older healthy value cannot replace a faulty latest one.
+          if (
+            lw::statusBits(data) &
+            (lw::status_bit::correction_error | lw::status_bit::sensor_error))
+          {
             return;
           }
 
@@ -198,6 +227,8 @@ int main(int argc, char ** argv)
           }
         },
         [&] {
+          last_measurement = lw::Clock::now();
+          receiving = true;
           if (zero_on_start) {
             startup_zero = zero.start();
           } else {
