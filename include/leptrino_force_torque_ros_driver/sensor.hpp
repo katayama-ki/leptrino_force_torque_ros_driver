@@ -20,6 +20,8 @@ struct Runtime
 bool validTimeout(double seconds);
 
 /// Manage validated sensor commands and streaming through synchronous callbacks.
+/// Not thread-safe or reentrant. Cancel via Runtime::running and let run()
+/// return before calling stop(); do not call lifecycle methods from callbacks.
 class Sensor
 {
 public:
@@ -38,10 +40,11 @@ public:
   /// Confirm START and process reads until runtime cancellation; command/I/O failures throw.
   /// Requires successful initialize(); chunk_done also follows reads containing START responses.
   /// started runs immediately after START is confirmed, before dispatching measurements.
+  /// May be called again after successful stop(), with runtime cancellation cleared.
   void run(
     const Measurement & measurement, const ChunkDone & chunk_done,
     const std::function<void()> & started = {});
-  /// Confirm STOP after any START attempt, without retries; failure throws.
+  /// Confirm STOP after any START attempt; failure throws.
   void stop();
 
   /// Close the port; call stop() first to confirm streaming has ended.
@@ -80,7 +83,7 @@ private:
 
   bool running() const
   {
-    return shutting_down_ || runtime_.running();
+    return ignore_runtime_stop_ || runtime_.running();
   }
 
   SerialPort port_;
@@ -95,7 +98,7 @@ private:
   bool initialized_ = false;
   bool start_sent_ = false;
   bool streaming_ = false;
-  bool shutting_down_ = false;
+  bool ignore_runtime_stop_ = false;
 
   Measurement measurement_;
   ChunkDone chunk_done_;

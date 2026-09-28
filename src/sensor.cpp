@@ -242,6 +242,9 @@ void Sensor::run(
   if (!initialized_) {
     throw std::logic_error("sensor is not initialized");
   }
+  if (start_sent_) {
+    throw std::logic_error("stop() must succeed before run() can be called again");
+  }
 
   measurement_ = measurement;
   chunk_done_ = chunk_done;
@@ -273,8 +276,14 @@ void Sensor::stop()
     return;
   }
 
-  start_sent_ = false;
-  shutting_down_ = true;
-  command(command_code::stop, 0);
+  ignore_runtime_stop_ = true;  // Temporarily ignore runtime_.running() to complete the STOP command.
+  try {
+    command(command_code::stop, retries_);
+    start_sent_ = false;
+  } catch (...) {
+    ignore_runtime_stop_ = false;
+    throw;
+  }
+  ignore_runtime_stop_ = false;
 }
 }  // namespace leptrino_force_torque_ros_driver
