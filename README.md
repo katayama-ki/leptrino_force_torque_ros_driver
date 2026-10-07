@@ -42,6 +42,7 @@ To override them, set private parameters in your own launch file.
 
 | Private parameter | Default | Description |
 |---|---|---|
+| `output_rotation_rpy` | `[0.0, 0.0, 0.0]` | Output rotation in radians (extrinsic XYZ roll, pitch, yaw), primarily to align the output coordinate frame with a fixed reference frame such as `base_link`. |
 | `warning_timeout` | `1.0` | Time in seconds without a valid measurement frame before warning. |
 | `command_timeout` | `1.0` | Timeout in seconds for each command attempt, including transmission and response validation. |
 | `command_retries` | `2` | Number of retries after the initial command attempt. |

@@ -19,7 +19,7 @@ install(FILES README.md LICENSE DESTINATION ${CATKIN_PACKAGE_SHARE_DESTINATION})
 
 if(CATKIN_ENABLE_TESTING)
   find_package(Threads REQUIRED)
-  foreach(test core sensor publication zero_wrench)
+  foreach(test core sensor publication zero_wrench output_rotation)
     add_executable(${PROJECT_NAME}_${test}_test test/${test}_test.cpp)
     target_compile_options(${PROJECT_NAME}_${test}_test PRIVATE -UNDEBUG)
     target_link_libraries(${PROJECT_NAME}_${test}_test leptrino_sensor Threads::Threads util)
