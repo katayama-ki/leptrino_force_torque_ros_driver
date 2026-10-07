@@ -3,11 +3,15 @@
 #include <ros/ros.h>
 #include <std_srvs/Trigger.h>
 
+#include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <limits>
 #include <stdexcept>
 #include <string>
+#include <vector>
 
+#include "leptrino_force_torque_ros_driver/output_rotation.hpp"
 #include "leptrino_force_torque_ros_driver/publication.hpp"
 #include "leptrino_force_torque_ros_driver/sensor.hpp"
 #include "leptrino_force_torque_ros_driver/zero_wrench.hpp"
@@ -53,6 +57,17 @@ int main(int argc, char ** argv)
 {
   ros::init(argc, argv, "leptrino");
   ros::NodeHandle nh("~");
+
+  std::vector<double> output_rpy(3, 0.0);
+  if (
+    (nh.hasParam("output_rotation_rpy") && !nh.getParam("output_rotation_rpy", output_rpy)) ||
+    output_rpy.size() != 3 ||
+    !std::all_of(output_rpy.begin(), output_rpy.end(), [](double v) { return std::isfinite(v); }))
+  {
+    ROS_FATAL("~output_rotation_rpy must be an array of three finite numbers [roll, pitch, yaw]");
+    return 1;
+  }
+  const lw::OutputRotation output_rotation(output_rpy[0], output_rpy[1], output_rpy[2]);
 
   std::string port;
   if (!nh.getParam("serial_port", port) || port.empty()) {
@@ -199,6 +214,7 @@ int main(int argc, char ** argv)
 
           auto values = lw::decodeWrench(data, factors);
           zero.subtract(values);
+          output_rotation.apply(values);
           geometry_msgs::WrenchStamped message;
           message.header.stamp.fromNSec(stamp.ros_nanoseconds);
           message.header.frame_id = frame_id;
