@@ -4,6 +4,7 @@
   <arg name="pub_rate" default="0.0" />
   <arg name="pub_queue_size" default="1" />
   <arg name="zero_wrench_on_start" default="false" />
+  <arg name="output_rotation_rpy" default="[0.0, 0.0, 0.0]" />
   <arg name="warning_timeout" default="1.0" />
   <arg name="command_timeout" default="1.0" />
   <arg name="command_retries" default="2" />
@@ -15,6 +16,7 @@
     <param name="pub_rate" type="double" value="$(arg pub_rate)" />
     <param name="pub_queue_size" type="int" value="$(arg pub_queue_size)" />
     <param name="zero_wrench_on_start" type="bool" value="$(arg zero_wrench_on_start)" />
+    <rosparam param="output_rotation_rpy" subst_value="true">$(arg output_rotation_rpy)</rosparam>
     <param name="warning_timeout" type="double" value="$(arg warning_timeout)" />
     <param name="command_timeout" type="double" value="$(arg command_timeout)" />
     <param name="command_retries" type="int" value="$(arg command_retries)" />

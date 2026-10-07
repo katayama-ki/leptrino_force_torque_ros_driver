@@ -34,6 +34,7 @@ The standard launch file exposes the commonly used private parameters below as l
 | `pub_rate` | `0.0` | Target average publication rate in Hz. `0` publishes the latest valid measurement from each receive chunk. |
 | `pub_queue_size` | `1` | ROS publisher queue size. |
 | `zero_wrench_on_start` | `false` | If true, zero the sensor on node startup and start publishing only after success. If startup zeroing fails, the node exits. |
+| `output_rotation_rpy` | `[0.0, 0.0, 0.0]` | Rotation applied to sensor-native force and torque vectors before publication, primarily to align the output coordinate frame with a fixed reference frame such as `base_link`; `[roll, pitch, yaw]` are specified in radians and applied as `Rz(yaw) * Ry(pitch) * Rx(roll)`. |
 
 #### Advanced parameters
 
