@@ -5,6 +5,7 @@
 
 #include <poll.h>
 #include <pty.h>
+#include <sys/ioctl.h>
 #include <unistd.h>
 
 #include <atomic>
@@ -16,6 +17,7 @@
 #include <vector>
 
 #include "leptrino_force_torque_ros_driver/publication.hpp"
+#include "leptrino_force_torque_ros_driver/serial_port.hpp"
 
 namespace lw = leptrino_force_torque_ros_driver;
 
@@ -150,6 +152,27 @@ struct Device
 
 int main()
 {
+  {
+    // A second open must fail while the port is held, even for root, and succeed after release.
+    Device device(false, 0);
+    device.finish();
+    {
+      lw::SerialPort port(device.path);
+      bool rejected = false;
+      try {
+        lw::SerialPort second(device.path);
+      } catch (const std::runtime_error &) {
+        rejected = true;
+      }
+      assert(rejected);
+
+      // The rejected instance must not clear the holder's exclusive mode.
+      int exclusive = 0;
+      assert(ioctl(device.slave, TIOCGEXCL, &exclusive) == 0 && exclusive);
+    }
+    lw::SerialPort reopened(device.path);
+  }
+
   for (int mode = 0; mode <= 4; ++mode) {
     for (bool legacy : {false, true}) {
       if (mode == 3 && !legacy) {

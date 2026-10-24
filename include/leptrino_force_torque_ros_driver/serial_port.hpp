@@ -20,7 +20,7 @@ using PollEvents = decltype(pollfd::events);
 class SerialPort
 {
 public:
-  /// Open and configure the device; throw on failure.
+  /// Open exclusively and configure the device; throw on failure, including when already in use.
   explicit SerialPort(const std::string & path);
   ~SerialPort();
 
@@ -39,6 +39,9 @@ public:
 
 private:
   int fd_ = -1;
+  /// Whether this instance set TIOCEXCL. The flag belongs to the device, so only its setter
+  /// clears it.
+  bool exclusive_ = false;
 };
 }  // namespace leptrino_force_torque_ros_driver
 

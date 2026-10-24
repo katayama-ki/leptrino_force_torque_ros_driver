@@ -5,6 +5,8 @@
 
 #include <fcntl.h>
 #include <poll.h>
+#include <sys/file.h>
+#include <sys/ioctl.h>
 #include <termios.h>
 #include <unistd.h>
 
@@ -30,6 +32,32 @@ SerialPort::SerialPort(const std::string & path)
   if (fd_ < 0) {
     throw ioError("open serial port");
   }
+
+  // Open exclusively.
+  // A process that already has the port open without flock() or TIOCEXCL is not detected.
+  if (::flock(fd_, LOCK_EX | LOCK_NB) != 0) {
+    const auto error = errno == EWOULDBLOCK
+      ? std::runtime_error("lock serial port: already in use by another process")
+      : ioError("lock serial port");
+    close();
+    throw error;
+  }
+  int exclusive = 0;
+  if (::ioctl(fd_, TIOCGEXCL, &exclusive) != 0) {
+    const auto error = ioError("get exclusive serial mode");
+    close();
+    throw error;
+  }
+  if (exclusive) {
+    close();
+    throw std::runtime_error("open serial port: already in exclusive use by another process");
+  }
+  if (::ioctl(fd_, TIOCEXCL) != 0) {
+    const auto error = ioError("set exclusive serial mode");
+    close();
+    throw error;
+  }
+  exclusive_ = true;
 
   termios settings;
   if (tcgetattr(fd_, &settings) != 0) {
@@ -61,7 +89,14 @@ bool SerialPort::close()
 {
   const int fd = fd_;
   fd_ = -1;
-  return fd < 0 || ::close(fd) == 0;
+  if (fd < 0) {
+    return true;
+  }
+  if (exclusive_) {
+    exclusive_ = false;
+    ::ioctl(fd, TIOCNXCL);  // Best effort.
+  }
+  return ::close(fd) == 0;
 }
 
 PollEvents SerialPort::wait(PollEvents events, Deadline deadline)
